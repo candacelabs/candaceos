@@ -1,0 +1,17 @@
+node_id: candaceos-demo
+bind: :7717
+data_dir: /var/lib/warden
+log_level: info
+
+# This private one-voter cluster proves election/quorum wiring without ever
+# discovering or probing any real fleet.
+peers:
+  - id: candaceos-demo
+    addr: warden:7717
+
+discovery:
+  mode: static
+  cluster_id: candaceos-prototype
+
+notify:
+  mode: log

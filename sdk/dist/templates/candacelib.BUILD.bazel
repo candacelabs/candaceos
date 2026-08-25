@@ -1,0 +1,3 @@
+# The selected candacelib packages retain their independently published import
+# paths while compiling as local targets inside this source distribution.
+# gazelle:prefix github.com/candacelabs/candacelib

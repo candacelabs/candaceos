@@ -1,0 +1,14 @@
+go/go.mod
+go/go.sum
+go/candacelib/LICENSE
+go/candacelib/go.mod
+go/candacelib/go.sum
+go/candacelib/boundedbuffer
+go/candacelib/config
+go/candacelib/liquidproto
+go/candacelib/redact
+go/pkg/candaceos
+go/pkg/telemetry
+go/proto/candace/candaceos
+go/proto/candace/telemetry
+go/services/candaceos-core

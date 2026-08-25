@@ -1,0 +1,8 @@
+FROM docker:28-cli@sha256:625d9431a9f54c5a2bc90f24f0e1c3d55b1349fd857dd85035f98c2c9acbdd4d
+
+RUN apk add --no-cache bash coreutils curl docker-cli-compose git openssl util-linux
+
+COPY --chmod=0555 updater.sh /usr/local/bin/candaceos-updater
+COPY --chmod=0555 updater-git-askpass.sh /usr/local/bin/candaceos-git-askpass
+
+ENTRYPOINT ["candaceos-updater"]

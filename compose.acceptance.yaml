@@ -1,0 +1,14 @@
+services:
+  warden:
+    image: "${CANDACEOS_ACCEPTANCE_IMAGE_PREFIX:?acceptance image prefix is required}-warden:test"
+  opencode:
+    image: "${CANDACEOS_ACCEPTANCE_IMAGE_PREFIX:?acceptance image prefix is required}-opencode:test"
+  core:
+    image: "${CANDACEOS_ACCEPTANCE_IMAGE_PREFIX:?acceptance image prefix is required}-core:test"
+    # The production-shaped file publishes 0.0.0.0:7780. A disposable gate
+    # keeps its random host port on loopback while retaining Core's
+    # 0.0.0.0:7780 container listener and required service networks.
+    ports: !override
+      - target: 7780
+        host_ip: 127.0.0.1
+    networks: !override [control, opencode]

@@ -1,0 +1,112 @@
+name: candaceos-fleet
+
+services:
+  postgres:
+    image: ${CANDACEOS_POSTGRES_IMAGE:?fleet environment is incomplete}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: candaceos
+      POSTGRES_USER: candaceos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?fleet environment is incomplete}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    security_opt: [no-new-privileges:true]
+    networks: [data]
+
+  warden:
+    image: ${CANDACEOS_WARDEN_IMAGE:?fleet environment is incomplete}
+    restart: unless-stopped
+    user: "${CANDACEOS_UID:?fleet environment is incomplete}:${CANDACEOS_GID:?fleet environment is incomplete}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      WARDEN_CONFIG: /etc/warden/warden.yaml
+      WARDEN_NODE_ID: ${CANDACEOS_NODE_ID:?fleet environment is incomplete}
+      WARDEN_PEERS: ${CANDACEOS_WARDEN_PEERS:?fleet environment is incomplete}
+      WARDEN_LOG_FORMAT: console
+    volumes:
+      - ./warden.yaml:/etc/warden/warden.yaml:ro
+      - ${CANDACEOS_STATE_ROOT:?fleet environment is incomplete}/runtime/warden:/var/lib/warden
+    ports:
+      - ${CANDACEOS_CONTROL_IP:?fleet environment is incomplete}:7717:7717
+    networks: [fleet]
+
+  git-source:
+    image: ${CANDACEOS_SOURCE_IMAGE:?fleet environment is incomplete}
+    restart: unless-stopped
+    init: true
+    user: "${CANDACEOS_UID:?fleet environment is incomplete}:${CANDACEOS_GID:?fleet environment is incomplete}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [serve, /srv/git/apps.git]
+    volumes:
+      - ${CANDACEOS_HOST_WORKSPACE:?fleet environment is incomplete}/.git:/srv/git/apps.git:ro
+    tmpfs: [/tmp]
+    ports:
+      - ${CANDACEOS_CONTROL_IP:?fleet environment is incomplete}:9418:9418
+    healthcheck:
+      test: [CMD, /usr/local/bin/candaceos-source, health-serve, git://127.0.0.1:9418/apps.git]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+    networks: [fleet]
+
+  core:
+    image: ${CANDACEOS_CORE_IMAGE:?fleet environment is incomplete}
+    restart: unless-stopped
+    init: true
+    user: "${CANDACEOS_UID:?fleet environment is incomplete}:${CANDACEOS_GID:?fleet environment is incomplete}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      HOME: /var/lib/candaceos
+      CANDACEOS_DATA_DIR: /var/lib/candaceos
+      CANDACEOS_DATABASE_URL: postgres://candaceos:${POSTGRES_PASSWORD:?fleet environment is incomplete}@postgres:5432/candaceos?sslmode=disable
+      CANDACEOS_BIND: 0.0.0.0:7780
+      CANDACEOS_WORKSPACE: /workspace
+      CANDACEOS_WARDEN_URL: http://warden:7717
+      CANDACEOS_FLEET_POLL_INTERVAL: ${CANDACEOS_FLEET_POLL_INTERVAL:-2s}
+      # Empty selects the Warden-advertised node address plus port 8094.
+      CANDACEOS_AGENT_URL: ""
+      CANDACEOS_AGENT_PORT: "8094"
+      CANDACEOS_AGENT_TOKEN: ${CANDACEOS_AGENT_TOKEN:?fleet environment is incomplete}
+      CANDACEOS_NODE_LABELS: ${CANDACEOS_NODE_LABELS:?fleet environment is incomplete}
+    volumes:
+      - ${CANDACEOS_HOST_WORKSPACE:?fleet environment is incomplete}:/workspace:ro
+      - ${CANDACEOS_STATE_ROOT:?fleet environment is incomplete}/runtime/core:/var/lib/candaceos
+    tmpfs: [/tmp]
+    ports:
+      - ${CANDACEOS_WEB_BIND_IP:?fleet environment is incomplete}:7780:7780
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, --max-time, "2", http://127.0.0.1:7780/healthz]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      warden:
+        condition: service_started
+      git-source:
+        condition: service_healthy
+    networks: [data, fleet]
+
+volumes:
+  postgres-data:
+
+networks:
+  data:
+    internal: true
+  # Core and Warden need the existing tailnet to reach worker agents/peers.
+  fleet:

@@ -1,0 +1,21 @@
+module(name = "candaceos_credential_cache_test")
+
+authenticated_download_repository = use_repo_rule(
+    "//:credential_repository.bzl",
+    "authenticated_download_repository",
+)
+
+authenticated_download_repository(
+    name = "credential_first",
+    url = "@CANDACEOS_CREDENTIAL_URL@",
+)
+
+authenticated_download_repository(
+    name = "credential_rotated",
+    url = "@CANDACEOS_CREDENTIAL_URL@",
+)
+
+authenticated_download_repository(
+    name = "credential_deleted",
+    url = "@CANDACEOS_CREDENTIAL_URL@",
+)

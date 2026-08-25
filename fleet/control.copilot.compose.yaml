@@ -1,0 +1,62 @@
+services:
+  copilot:
+    image: ${CANDACEOS_CORE_IMAGE:?fleet environment is incomplete}
+    restart: unless-stopped
+    init: true
+    user: "${CANDACEOS_UID:?fleet environment is incomplete}:${CANDACEOS_GID:?fleet environment is incomplete}"
+    entrypoint: [/opt/candaceos/copilot]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      COPILOT_GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:?fleet environment is incomplete}
+      GH_TOKEN: ${COPILOT_GITHUB_TOKEN:?fleet environment is incomplete}
+      GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:?fleet environment is incomplete}
+      COPILOT_CONNECTION_TOKEN: ${CANDACEOS_COPILOT_CONNECTION_TOKEN:?fleet environment is incomplete}
+      COPILOT_HOME: /var/lib/copilot
+      HOME: /var/lib/copilot
+    command:
+      - --headless
+      - --host
+      - 0.0.0.0
+      - --port
+      - "4321"
+      - --no-auto-update
+      - --log-level
+      - error
+      - --disable-builtin-mcps
+      - --no-custom-instructions
+    working_dir: /workspace
+    volumes:
+      - type: bind
+        source: ${CANDACEOS_COPILOT_BIN:?fleet environment is incomplete}
+        target: /opt/candaceos/copilot
+        read_only: true
+        bind:
+          create_host_path: false
+      - ${CANDACEOS_HOST_WORKSPACE:?fleet environment is incomplete}:/workspace
+      - ${CANDACEOS_STATE_ROOT:?fleet environment is incomplete}/runtime/copilot:/var/lib/copilot
+    labels:
+      io.candaceos.copilot.sha256: ${CANDACEOS_COPILOT_SHA256:?fleet environment is incomplete}
+    tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "4321"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks: [copilot]
+
+  core:
+    environment:
+      CANDACEOS_HARNESS_BACKEND: copilot-cli
+      CANDACEOS_COPILOT_URL: http://copilot:4321
+      CANDACEOS_COPILOT_CONNECTION_TOKEN: ${CANDACEOS_COPILOT_CONNECTION_TOKEN:?fleet environment is incomplete}
+      CANDACEOS_COPILOT_MODEL: ${CANDACEOS_COPILOT_MODEL:-gpt-5.4}
+    depends_on:
+      copilot:
+        condition: service_healthy
+    networks: [copilot]
+
+networks:
+  # Copilot requires outbound GitHub access and shares no network with data.
+  copilot:

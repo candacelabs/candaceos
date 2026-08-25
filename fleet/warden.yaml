@@ -1,0 +1,34 @@
+bind: :7717
+data_dir: /var/lib/warden
+log_level: info
+
+# All three nodes receive this byte-identical static voter set. The node-local
+# WARDEN_NODE_ID environment value selects self without rewriting the file, and
+# the deployer overrides this list through WARDEN_PEERS, which it builds from
+# the configured node ids and addresses. The entries below are documentation
+# placeholders, not a deployable fleet.
+peers:
+  - id: control
+    addr: 203.0.113.10:7717
+  - id: worker-gpu
+    addr: 203.0.113.11:7717
+  - id: worker
+    addr: 203.0.113.12:7717
+
+discovery:
+  mode: static
+  cluster_id: candaceos-fleet
+
+# The control host can pause for several seconds during storage flushes. Keep
+# heartbeats prompt, but do not turn an ordinary host stall into rapid
+# back-to-back fleet elections.
+timing:
+  heartbeat_interval: 1s
+  suspect_after: 15s
+  dead_after: 45s
+  election_timeout_min: 10s
+  election_timeout_max: 15s
+  rpc_timeout: 3s
+
+notify:
+  mode: log

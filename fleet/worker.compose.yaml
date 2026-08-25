@@ -1,0 +1,70 @@
+name: candaceos-fleet
+
+services:
+  warden:
+    image: ${CANDACEOS_WARDEN_IMAGE:?fleet environment is incomplete}
+    restart: unless-stopped
+    user: "${CANDACEOS_UID:?fleet environment is incomplete}:${CANDACEOS_GID:?fleet environment is incomplete}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      WARDEN_CONFIG: /etc/warden/warden.yaml
+      WARDEN_NODE_ID: ${CANDACEOS_NODE_ID:?fleet environment is incomplete}
+      WARDEN_PEERS: ${CANDACEOS_WARDEN_PEERS:?fleet environment is incomplete}
+      WARDEN_LOG_FORMAT: console
+    volumes:
+      - ./warden.yaml:/etc/warden/warden.yaml:ro
+      - ${CANDACEOS_STATE_ROOT:?fleet environment is incomplete}/runtime/warden:/var/lib/warden
+    ports:
+      - ${CANDACEOS_NODE_IP:?fleet environment is incomplete}:7717:7717
+    networks: [fleet]
+
+  agent:
+    image: ${CANDACEOS_AGENT_IMAGE:?fleet environment is incomplete}
+    restart: unless-stopped
+    init: true
+    user: "${CANDACEOS_UID:?fleet environment is incomplete}:${CANDACEOS_GID:?fleet environment is incomplete}"
+    group_add:
+      - ${CANDACEOS_DOCKER_GID:?fleet environment is incomplete}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      CANDACEOS_AGENT_BIND: 0.0.0.0:8094
+      CANDACEOS_AGENT_TOKEN: ${CANDACEOS_AGENT_TOKEN:?fleet environment is incomplete}
+      CANDACEOS_AGENT_NODE_ID: ${CANDACEOS_NODE_ID:?fleet environment is incomplete}
+      CANDACEOS_AGENT_STATE_FILE: /var/lib/candaceos-agent/state.json
+      CANDACEOS_AGENT_WORKSPACE: ${CANDACEOS_HOST_WORKSPACE:?fleet environment is incomplete}
+      CANDACEOS_AGENT_REVISION_ROOT: ${CANDACEOS_STATE_ROOT:?fleet environment is incomplete}/revisions
+      CANDACEOS_AGENT_REVISION_MAX_ENTRIES: ${CANDACEOS_AGENT_REVISION_MAX_ENTRIES:-128}
+      CANDACEOS_AGENT_REVISION_MAX_BYTES: ${CANDACEOS_AGENT_REVISION_MAX_BYTES:-4294967296}
+      CANDACEOS_AGENT_SOURCE_REMOTE: ${CANDACEOS_AGENT_SOURCE_REMOTE:?fleet environment is incomplete}
+      CANDACEOS_AGENT_SOURCE_REPOSITORY: /var/lib/candaceos-agent/source.git
+      CANDACEOS_AGENT_SOURCE_FETCH_TIMEOUT: ${CANDACEOS_AGENT_SOURCE_FETCH_TIMEOUT:-30s}
+      CANDACEOS_AGENT_DRY_RUN: "false"
+      DOCKER_CONFIG: /tmp/docker-config
+    volumes:
+      # The mutable Git object store is agent-owned under /var/lib. The
+      # workspace is deliberately empty and read-only on worker nodes.
+      - ${CANDACEOS_HOST_WORKSPACE:?fleet environment is incomplete}:${CANDACEOS_HOST_WORKSPACE:?fleet environment is incomplete}:ro
+      - ${CANDACEOS_STATE_ROOT:?fleet environment is incomplete}/revisions:${CANDACEOS_STATE_ROOT:?fleet environment is incomplete}/revisions
+      - ${CANDACEOS_STATE_ROOT:?fleet environment is incomplete}/runtime/agent:/var/lib/candaceos-agent
+      - /var/run/docker.sock:/var/run/docker.sock
+    tmpfs: [/tmp]
+    ports:
+      - ${CANDACEOS_NODE_IP:?fleet environment is incomplete}:8094:8094
+    healthcheck:
+      test: [CMD-SHELL, 'wget --quiet --spider --header="Authorization: Bearer $${CANDACEOS_AGENT_TOKEN}" http://127.0.0.1:8094/healthz']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    depends_on:
+      warden:
+        condition: service_started
+    networks: [fleet]
+
+networks:
+  # This ordinary bridge reaches only the already-configured host tailnet.
+  fleet:

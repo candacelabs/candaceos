@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state=${FAKE_GH_STATE:?FAKE_GH_STATE is required}
+mkdir -p "$state/assets"
+printf '%s\n' "$*" >>"$state/calls.log"
+
+has_argument() {
+  local wanted=$1 argument
+  shift
+  for argument in "$@"; do
+    [[ "$argument" == "$wanted" ]] && return 0
+  done
+  return 1
+}
+
+case "${1:-} ${2:-}" in
+  'auth token')
+    printf 'fake-gh-token\n'
+    ;;
+  'release view')
+    [[ -f "$state/tag" ]] || {
+      printf 'release not found\n' >&2
+      exit 1
+    }
+    if has_argument assets "$@"; then
+      for metadata in "$state"/assets/*.meta; do
+        [[ -e "$metadata" ]] || continue
+        IFS=$'\t' read -r name _ api_url _ <"$metadata"
+        printf '%s\t%s\n' "$name" "$api_url"
+      done
+    elif has_argument url "$@"; then
+      printf 'https://github.com/example-org/example-repo/releases/tag/%s\n' "$(<"$state/tag")"
+    else
+      printf '{"tagName":"%s"}\n' "$(<"$state/tag")"
+    fi
+    ;;
+  'release create')
+    [[ ! -f "$state/tag" ]] || exit 1
+    tag=$3
+    target=
+    shift 3
+    while (($# > 0)); do
+      if [[ $1 == --target ]]; then
+        target=$2
+        break
+      fi
+      shift
+    done
+    [[ -n "$target" ]] || exit 1
+    printf '%s\n' "$tag" >"$state/tag"
+    printf '%s\n' "$target" >"$state/revision"
+    ;;
+  'release upload')
+    tag=$3
+    path=$4
+    [[ -f "$state/tag" && "$(<"$state/tag")" == "$tag" && -f "$path" ]] || exit 1
+    name=$(basename "$path")
+    for metadata in "$state"/assets/*.meta; do
+      [[ -e "$metadata" ]] || continue
+      IFS=$'\t' read -r existing_name _ <"$metadata"
+      [[ "$existing_name" != "$name" ]] || exit 1
+    done
+    count=$(find "$state/assets" -name '*.meta' -type f | wc -l)
+    id=$((1001 + count))
+    api_url="https://api.github.com/repos/example-org/example-repo/releases/assets/$id"
+    digest="sha256:$(sha256sum "$path" | awk '{print $1}')"
+    cp "$path" "$state/assets/$id.data"
+    printf '%s\t%s\t%s\t%s\n' "$name" "$id" "$api_url" "$digest" \
+      >"$state/assets/$id.meta"
+    ;;
+  'api repos/example-org/example-repo/commits/'*)
+    printf '%s\n' "$(<"$state/revision")"
+    ;;
+  'api https://api.github.com/'*)
+    id=${2##*/}
+    IFS=$'\t' read -r _ _ _ digest <"$state/assets/$id.meta"
+    printf '%s\n' "$digest"
+    ;;
+  *)
+    printf 'unsupported fake gh invocation: %s\n' "$*" >&2
+    exit 1
+    ;;
+esac

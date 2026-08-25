@@ -1,0 +1,196 @@
+name: candaceos
+
+x-agent: &agent
+  image: candaceos-agent:prototype
+  build:
+    context: ../go
+    dockerfile: services/candaceos-agent/Dockerfile
+  restart: unless-stopped
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  healthcheck:
+    test: [CMD-SHELL, 'wget --quiet --spider --header="Authorization: Bearer $${CANDACEOS_AGENT_TOKEN}" http://127.0.0.1:8094/healthz']
+    interval: 2s
+    timeout: 3s
+    retries: 30
+    start_period: 5s
+  networks:
+    control:
+      aliases: [candaceos-agent]
+
+services:
+  postgres:
+    image: postgres:18.4-alpine3.24@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    restart: unless-stopped
+    volumes:
+      # PostgreSQL 18 keeps PGDATA below /var/lib/postgresql/18/docker.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    security_opt: [no-new-privileges:true]
+    networks: [control]
+
+  warden:
+    image: candaceos-warden:prototype
+    build:
+      context: ../go
+      dockerfile: services/warden/Dockerfile
+    restart: unless-stopped
+    user: "${CANDACEOS_UID:?run ./install.sh first}:${CANDACEOS_GID:?run ./install.sh first}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ./warden.yaml:/etc/warden/warden.yaml:ro
+      - "${CANDACEOS_STATE_ROOT:?run ./install.sh first}/runtime/warden:/var/lib/warden"
+    networks: [control]
+
+  agent-dry-run:
+    <<: *agent
+    profiles: [dry-run]
+    user: "${CANDACEOS_UID:?run ./install.sh first}:${CANDACEOS_GID:?run ./install.sh first}"
+    volumes:
+      - "${CANDACEOS_HOST_WORKSPACE:?run ./install.sh first}:/workspace:ro"
+      # Keep the host and container paths identical so host Docker resolves
+      # relative bind mounts from the immutable Compose project correctly.
+      - "${CANDACEOS_STATE_ROOT:?run ./install.sh first}/revisions:${CANDACEOS_STATE_ROOT:?run ./install.sh first}/revisions"
+      - "${CANDACEOS_STATE_ROOT:?run ./install.sh first}/runtime/agent-dry-run:/var/lib/candaceos-agent"
+    tmpfs: [/tmp]
+
+  agent-live:
+    <<: *agent
+    profiles: [live]
+    volumes:
+      # The identical host/container path keeps relative Compose bind mounts
+      # meaningful to the host Docker daemon.
+      - "${CANDACEOS_HOST_WORKSPACE:?run ./install.sh first}:${CANDACEOS_HOST_WORKSPACE:?run ./install.sh first}:ro"
+      - "${CANDACEOS_STATE_ROOT:?run ./install.sh first}/revisions:${CANDACEOS_STATE_ROOT:?run ./install.sh first}/revisions"
+      - "${CANDACEOS_STATE_ROOT:?run ./install.sh first}/runtime/agent-live:/var/lib/candaceos-agent"
+      - /var/run/docker.sock:/var/run/docker.sock
+    tmpfs: [/tmp]
+
+  copilot:
+    image: candaceos-core:prototype
+    build:
+      context: ../go
+      dockerfile: ../candaceos/Dockerfile.core
+    profiles: [copilot]
+    restart: unless-stopped
+    init: true
+    user: "${CANDACEOS_UID:?run ./install.sh first}:${CANDACEOS_GID:?run ./install.sh first}"
+    entrypoint: [/opt/candaceos/copilot]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command:
+      - --headless
+      - --host
+      - 0.0.0.0
+      - --port
+      - "4321"
+      - --no-auto-update
+      - --log-level
+      - error
+      - --disable-builtin-mcps
+      - --no-custom-instructions
+    working_dir: /workspace
+    volumes:
+      - type: bind
+        source: ${CANDACEOS_COPILOT_BIN:-/dev/null}
+        target: /opt/candaceos/copilot
+        read_only: true
+        bind:
+          create_host_path: false
+      - "${CANDACEOS_HOST_WORKSPACE:?run ./install.sh first}:/workspace"
+      - "${CANDACEOS_STATE_ROOT:?run ./install.sh first}/runtime/copilot:/var/lib/copilot"
+    labels:
+      io.candaceos.copilot.sha256: "${CANDACEOS_COPILOT_SHA256:-unconfigured}"
+    tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "4321"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks: [copilot]
+
+  opencode:
+    image: candaceos-opencode:1.18.21
+    build:
+      context: .
+      dockerfile: Dockerfile.opencode
+    profiles: [opencode]
+    restart: unless-stopped
+    init: true
+    user: "${CANDACEOS_UID:?run ./install.sh first}:${CANDACEOS_GID:?run ./install.sh first}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    working_dir: /workspace
+    volumes:
+      - "${CANDACEOS_HOST_WORKSPACE:?run ./install.sh first}:/workspace"
+      - "${CANDACEOS_STATE_ROOT:?run ./install.sh first}/runtime/opencode:/var/lib/opencode"
+    tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD-SHELL, 'curl --fail --silent --show-error --max-time 2 --user "$${OPENCODE_SERVER_USERNAME}:$${OPENCODE_SERVER_PASSWORD}" http://127.0.0.1:4096/global/health >/dev/null']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks: [opencode]
+
+  core:
+    image: candaceos-core:prototype
+    build:
+      context: ../go
+      dockerfile: ../candaceos/Dockerfile.core
+    restart: unless-stopped
+    init: true
+    user: "${CANDACEOS_UID:?run ./install.sh first}:${CANDACEOS_GID:?run ./install.sh first}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - "${CANDACEOS_HOST_WORKSPACE:?run ./install.sh first}:/workspace:ro"
+      - "${CANDACEOS_STATE_ROOT:?run ./install.sh first}/runtime/core:/var/lib/candaceos"
+    tmpfs: [/tmp]
+    ports:
+      - "0.0.0.0:7780:7780"
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, --max-time, "2", http://127.0.0.1:7780/healthz]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      warden:
+        condition: service_started
+      copilot:
+        condition: service_healthy
+        required: false
+      opencode:
+        condition: service_healthy
+        required: false
+    networks: [control, copilot, opencode]
+
+volumes:
+  postgres-data:
+
+networks:
+  # DB, Warden, and the node executor have no internet route and publish no
+  # ports. Core is their only user-facing mediator.
+  control:
+    internal: true
+  # Copilot needs outbound access to GitHub, but this network contains no DB,
+  # Warden, or executor. Its headless port is not published to the host.
+  copilot:
+  # OpenCode has the same isolated shape: outbound provider access and a
+  # writable workspace, but no DB, Warden, node agent, or host Docker socket.
+  opencode:

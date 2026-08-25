@@ -1,0 +1,13 @@
+services:
+  hello:
+    image: busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [httpd, -f, -p, "8080", -h, /www]
+    volumes:
+      - ./index.html:/www/index.html:ro
+    ports:
+      - 127.0.0.1:18080:8080

@@ -1,0 +1,32 @@
+services:
+  ollama:
+    image: ${CANDACEOS_OLLAMA_IMAGE:?fleet environment is incomplete}
+    restart: unless-stopped
+    init: true
+    runtime: nvidia
+    user: "${CANDACEOS_UID:?fleet environment is incomplete}:${CANDACEOS_GID:?fleet environment is incomplete}"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      HOME: /var/lib/ollama
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_MODELS: /var/lib/ollama/models
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: q8_0
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_KEEP_ALIVE: "-1"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - ${CANDACEOS_STATE_ROOT:?fleet environment is incomplete}/runtime/ollama:/var/lib/ollama
+    ports:
+      - ${CANDACEOS_AI_IP:?fleet environment is incomplete}:11434:11434
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks: [fleet]

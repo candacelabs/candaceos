@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "external_harness_test",
+    srcs = [
+        "external_harness_test.go",
+        "mock_host_generate_test.go",
+        "mock_host_test.go",
+        "steering_order_test.go",
+    ],
+    deps = [
+        "//customharness",
+        "//steering",
+        "@candaceos//pkg/candaceos/component",
+        "@candaceos//pkg/candaceos/harness",
+        "@candaceos//proto/candace/candaceos/v1:candaceos",
+        "@candaceos//services/candaceos-core/bootstrap",
+        "@com_github_onsi_ginkgo_v2//:ginkgo",
+        "@com_github_onsi_gomega//:gomega",
+        "@org_uber_go_mock//gomock",
+    ],
+)

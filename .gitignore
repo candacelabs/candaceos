@@ -1,0 +1,21 @@
+# Materialized secrets. The installer writes a mode-600 .env containing the
+# generated PostgreSQL password, agent token, Copilot connection token, and
+# OpenCode password, plus any GitHub credential the operator supplies.
+.env
+.env.*
+!.env.example
+secrets/
+
+# Installed state that lands inside the checkout when it is also the state
+# root: the app Git repository, container runtime state, verified revision
+# snapshots, the digest-addressed Copilot CLI, fleet image caches, and
+# database backups.
+apps/.git/
+runtime/
+revisions/
+tools/
+image-cache/
+backups/
+
+# Per-machine fleet topology.
+fleet/topology.local.env

@@ -1,0 +1,39 @@
+# Build context: the repository's go/ directory.
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY candacelib/go.mod candacelib/go.sum ./candacelib/
+RUN go mod download
+COPY . .
+
+ARG VERSION=dev
+ENV CGO_ENABLED=0 GOOS=linux GOFLAGS=-mod=readonly
+RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+    -o /out/candaceos-core ./services/candaceos-core/cmd
+
+FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241 AS runtime
+
+ADD --checksum=sha256:a757f1ba6db18f4de8cbadb244843a5f89bc75b5e7c6fc127d2bd77fbd12ed62 \
+    https://github.com/cli/cli/releases/download/v2.94.0/gh_2.94.0_linux_amd64.tar.gz \
+    /tmp/gh-linux-amd64.tar.gz
+COPY --from=builder /usr/local/go /usr/local/go
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl git make netcat-openbsd ripgrep \
+    && tar -xzf /tmp/gh-linux-amd64.tar.gz -C /tmp \
+    && install -m 0755 /tmp/gh_2.94.0_linux_amd64/bin/gh /usr/local/bin/gh \
+    && git config --system credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential' \
+    && mkdir -p /var/lib/candaceos /workspace \
+    && chown -R 65532:65532 /var/lib/candaceos /workspace \
+    && rm -rf /tmp/gh-linux-amd64.tar.gz /tmp/gh_2.94.0_linux_amd64 \
+    && rm -rf /var/lib/apt/lists/*
+ENV HOME=/var/lib/candaceos PATH=/usr/local/go/bin:$PATH \
+    GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1
+USER 65532:65532
+EXPOSE 7780
+ENTRYPOINT ["/usr/local/bin/candaceos-core"]
+
+FROM runtime
+
+COPY --from=builder /out/candaceos-core /usr/local/bin/candaceos-core

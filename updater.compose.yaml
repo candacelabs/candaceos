@@ -1,0 +1,38 @@
+name: candaceos-cd
+
+services:
+  updater:
+    container_name: candaceos-updater
+    image: candaceos-updater:local
+    build:
+      context: .
+      dockerfile: Dockerfile.updater
+    restart: unless-stopped
+    init: true
+    user: "${CANDACEOS_UPDATER_UID:?run ./bootstrap-updater.sh}:${CANDACEOS_UPDATER_GID:?run ./bootstrap-updater.sh}"
+    group_add:
+      - "${CANDACEOS_DOCKER_GID:?run ./bootstrap-updater.sh}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    network_mode: host
+    environment:
+      CANDACEOS_DEPLOY_ROOT: "${CANDACEOS_DEPLOY_ROOT:?run ./bootstrap-updater.sh}"
+      CANDACEOS_GITHUB_TOKEN_FILE: /run/secrets/github-token
+      CANDACEOS_POLL_INTERVAL: "${CANDACEOS_POLL_INTERVAL:-30}"
+      CANDACEOS_REPOSITORY: "${CANDACEOS_REPOSITORY:?run ./bootstrap-updater.sh}"
+      DOCKER_CONFIG: /tmp/docker-config
+      HOME: /tmp
+    volumes:
+      # The identical host/container path is required because the updater's
+      # Compose client asks the host daemon to mount state and app paths.
+      - "${CANDACEOS_DEPLOY_ROOT:?run ./bootstrap-updater.sh}:${CANDACEOS_DEPLOY_ROOT:?run ./bootstrap-updater.sh}"
+      - "${CANDACEOS_DEPLOY_ROOT:?run ./bootstrap-updater.sh}/secrets/github-token:/run/secrets/github-token:ro"
+      - /var/run/docker.sock:/var/run/docker.sock
+    tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD, candaceos-updater, --health]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
